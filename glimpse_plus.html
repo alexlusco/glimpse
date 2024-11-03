@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glimpse+</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #ffffff; /* White background */
+            color: #000000; /* Black text */
+            margin: 0;
+            padding: 20px;
+        }
+        h2 {
+            text-align: center;
+            color: #000000;
+        }
+        input[type="file"] {
+            display: block;
+            margin: 20px auto;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .results {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .instructions {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #000000;
+        }
+        .footer {
+            margin-top: 30px;
+            font-size: 14px;
+            color: #000000;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Glimpse+</h2>
+        <p><strong>Glimpse+</strong> is a lightweight, client-side data analysis tool that allows users to quickly inspect Excel and CSV files. The tool is stateless and non-persistent, executing only in your current session. All file processing is done locally in your browser, providing fast, secure insights into your data.</p>
+
+        <input type="file" id="fileInput" accept=".xlsx, .xls, .csv" />
+        <div id="resultsContainer"></div>
+    </div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', handleFile, false);
+
+        function handleFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+            const resultsContainer = document.getElementById('resultsContainer');
+            resultsContainer.innerHTML = ""; // Clear previous results
+
+            if (fileExtension === 'csv') {
+                reader.onload = function(e) {
+                    const data = e.target.result;
+                    const rows = data.split('\n').map(row => row.split(','));
+                    displayResults(file, rows, 'CSV File');
+                };
+                reader.readAsText(file);
+            } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    workbook.SheetNames.forEach(sheetName => {
+                        const sheet = workbook.Sheets[sheetName];
+                        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        displayResults(file, jsonData, `Sheet: ${sheetName}`);
+                    });
+                };
+                reader.readAsArrayBuffer(file);
+            } else {
+                alert('Unsupported file type. Please upload an .xlsx, .xls, or .csv file.');
+            }
+        }
+
+        function displayResults(file, jsonData, sheetTitle) {
+            const container = document.createElement('div');
+            container.className = 'results';
+            container.innerHTML = `<h3>${sheetTitle}</h3>`;
+            let output = document.createElement('pre');
+            container.appendChild(output);
+            document.getElementById('resultsContainer').appendChild(container);
+
+            output.textContent = ""; // Clear previous output if any
+
+            // Display metadata
+            output.textContent += "== File Metadata ==\n";
+            output.textContent += `File Name: ${file.name}\n`;
+            output.textContent += `File Size: ${file.size} bytes\n`;
+            output.textContent += `Last Modified: ${file.lastModifiedDate}\n`;
+
+            // Initial Checks
+            output.textContent += "\n== Initial Data Inspection ==\n";
+            output.textContent += "Total Rows: " + jsonData.length + "\n";
+            output.textContent += "Total Columns: " + (jsonData[0] ? jsonData[0].length : 0) + "\n";
+
+            // Detect and list the type of each variable (column)
+            output.textContent += "\n== Column Data Type Detection ==\n";
+            let numericColumns = [];
+            for (let col = 0; col < jsonData[0].length; col++) {
+                let textCount = 0;
+                let numberCount = 0;
+                let dateCount = 0;
+                let totalCount = 0;
+                let numberValues = [];
+
+                for (let row = 1; row < jsonData.length; row++) {
+                    let cell = jsonData[row][col];
+                    if (cell !== undefined && cell !== null) {
+                        totalCount++;
+                        if (typeof cell === 'string' && isNaN(Date.parse(cell))) {
+                            textCount++;
+                        } else if (!isNaN(cell)) {
+                            numberCount++;
+                            numberValues.push(Number(cell));
+                        } else if (!isNaN(Date.parse(cell))) {
+                            dateCount++;
+                        }
+                    }
+                }
+
+                let columnType = "Mixed";
+                if (textCount === totalCount) {
+                    columnType = "Text";
+                } else if (numberCount === totalCount) {
+                    columnType = "Number";
+                    numericColumns.push({ colIndex: col, values: numberValues });
+                } else if (dateCount === totalCount) {
+                    columnType = "Date";
+                }
+
+                output.textContent += `Column ${col + 1} ('${jsonData[0][col]}') - Detected type: ${columnType}\n`;
+            }
+
+            // Check for missing data and provide total by column with percentage
+            output.textContent += "\n== Missing Data Check ==\n";
+            let totalRows = jsonData.length - 1; // Exclude header row
+            let missingDataCount = 0;
+            for (let col = 0; col < jsonData[0].length; col++) {
+                let columnMissingCount = 0;
+                for (let row = 1; row < jsonData.length; row++) {
+                    if (!jsonData[row][col]) {
+                        columnMissingCount++;
+                        missingDataCount++;
+                    }
+                }
+                let missingPercentage = ((columnMissingCount / totalRows) * 100).toFixed(2);
+                output.textContent += `Column ${col + 1} ('${jsonData[0][col]}') - Total Missing Values: ${columnMissingCount} (${missingPercentage}%)\n`;
+            }
+            if (missingDataCount === 0) {
+                output.textContent += "No missing data found.\n";
+            } else {
+                output.textContent += `Total Missing Data Cells in Dataset: ${missingDataCount}\n`;
+            }
+
+            // Check for duplicate rows and show the original row number it duplicates
+            output.textContent += "\n== Duplicate Rows Check ==\n";
+            const rowSet = new Map();
+            let duplicateCount = 0;
+            for (let i = 1; i < jsonData.length; i++) {
+                const row = jsonData[i].join('|');
+                if (rowSet.has(row)) {
+                    duplicateCount++;
+                    output.textContent += `Duplicate row found at Row ${i + 1}, duplicates Row ${rowSet.get(row)}\n`;
+                } else {
+                    rowSet.set(row, i + 1); // Store the original row number
+                }
+            }
+            if (duplicateCount === 0) {
+                output.textContent += "No duplicate rows found.\n";
+            } else {
+                output.textContent += `Total Duplicated Rows: ${duplicateCount}\n`;
+            }
+
+            // Mean and median for numeric columns
+            output.textContent += "\n== Mean and Median for Numeric Columns ==\n";
+            numericColumns.forEach(column => {
+                if (column.values.length > 0) {
+                    let mean = column.values.reduce((sum, val) => sum + val, 0) / column.values.length;
+                    let sortedValues = column.values.slice().sort((a, b) => a - b);
+                    let median = sortedValues.length % 2 === 0 ?
+                        (sortedValues[sortedValues.length / 2 - 1] + sortedValues[sortedValues.length / 2]) / 2 :
+                        sortedValues[Math.floor(sortedValues.length / 2)];
+                    output.textContent += `Column ${column.colIndex + 1} ('${jsonData[0][column.colIndex]}') - Mean: ${mean.toFixed(2)}, Median: ${median.toFixed(2)}\n`;
+                }
+            });
+
+            // Word count for text columns and mean word count per row
+            output.textContent += "\n== Word Count in Text Columns ==\n";
+            for (let col = 0; col < jsonData[0].length; col++) {
+                let totalWordCount = 0;
+                let rowCountWithWords = 0;
+
+                for (let row = 1; row < jsonData.length; row++) {
+                    let cell = jsonData[row][col];
+                    if (cell && typeof cell === 'string') {
+                        let wordCount = cell.trim().split(/\s+/).length;
+                        totalWordCount += wordCount;
+                        rowCountWithWords++;
+                    }
+                }
+
+                if (rowCountWithWords > 0) {
+                    let meanWordCount = totalWordCount / rowCountWithWords;
+                    output.textContent += `Column ${col + 1} ('${jsonData[0][col]}') - Total words: ${totalWordCount}, Mean words per row: ${meanWordCount.toFixed(2)}\n`;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
+</body>
+</html>
