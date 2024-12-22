@@ -1,4 +1,4 @@
-# Glimpse (early proto-type / test)
+# Glimpse (early prototype / proof of concept)
 
 - a lightweight, client-side data analysis tool built using HTML, CSS, and JavaScript. Designed for quick inspection of Excel (`.xlsx`, `.xls`) and CSV files, it runs entirely in the user's web browser, ensuring that data processing remains local and secure without reliance on server-side storage or external data transmission.
 
